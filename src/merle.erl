@@ -51,7 +51,7 @@
 -export([
     stats/0, stats/1, version/0, getkey/1, delete/2, set/4, add/4, replace/2,
     replace/4, cas/5, set/2, flushall/0, flushall/1, verbosity/1, add/2,
-    cas/3, getskey/1, connect/0, connect/2, delete/1, disconnect/0
+    cas/3, getskey/1, connect/0, connect/2, connect/1, delete/1, disconnect/0
 ]).
 
 %% gen_server callbacks
@@ -232,6 +232,21 @@ cas(Key, Flag, ExpTime, CasUniq, Value) ->
 connect() ->
 	connect(?DEFAULT_HOST, ?DEFAULT_PORT).
 
+connect(KetamaFile) ->
+    ketama:start_link(KetamaFile),
+    {ok, Data} = file:read_file(KetamaFile),
+    Servers = lists:foldl(
+    fun("#"++_R, Acc) -> Acc;
+       (HostPortWeight, Acc) ->
+           [HostPort, _] = string:tokens(HostPortWeight, "\t"),
+           [Host, Port] = string:tokens(HostPort, ":"),
+           {IPort, _} = string:to_integer(Port),
+           [{Host, IPort, Port}|Acc]
+    end,[],string:tokens(erlang:binary_to_list(Data), "\n")),
+    start_link(Servers).
+    
+	%connect(?DEFAULT_HOST, ?DEFAULT_PORT).
+
 %% @doc connect to memcached
 connect(Host, Port) ->
 	start_link(Host, Port).
@@ -244,10 +259,39 @@ disconnect() ->
 %% @private
 start_link(Host, Port) ->
     gen_server2:start_link({local, ?SERVER}, ?MODULE, [Host, Port], []).
-
+start_link(Servers) ->
+    gen_server2:start_link({local, ?SERVER}, ?MODULE, [Servers], []).
 %% @private
 init([Host, Port]) ->
-    gen_tcp:connect(Host, Port, ?TCP_OPTS).
+    gen_tcp:connect(Host, Port, ?TCP_OPTS);
+init([Servers])->
+    {ok, lists:foldl(
+    fun({Host, IPort, Port}, Acc)->
+        case gen_tcp:connect(Host, IPort, ?TCP_OPTS) of
+            {ok, Socket}->
+                Key = list_to_binary(Host ++ ":" ++ Port),
+                gb_trees:enter(Key, Socket, Acc);
+            {error, _}->
+                Acc
+        end
+    end, gb_trees:empty(), Servers)}.
+
+get_socket( Key, Sockets)->
+    Server = ketama:getserver(Key),
+    case gb_trees:get(Server, Sockets) of
+        undefined->
+            [Host, Port] = string:tokens(binary_to_list(Server), ":"),
+            {IPort, _} = string:to_integer(Port),
+            case gen_tcp:connect(Host, IPort, ?TCP_OPTS) of
+                {ok, Socket}->
+                    {Socket, gb_trees:enter(Server, Socket, Sockets)};
+                {error,_} ->
+                    {{error, unable_to_connect, Server}, Sockets}
+                end;
+        Socket ->
+            {Socket, Sockets}
+    end.
+    
 
 handle_call({stop}, _From, Socket) ->
     {stop, requested_disconnect, Socket};
@@ -276,22 +320,26 @@ handle_call({flushall, {Delay}}, _From, Socket) ->
     Reply = send_generic_cmd(Socket, iolist_to_binary([<<"flush_all ">>, Delay])),
     {reply, Reply, Socket};
 
-handle_call({getkey, {Key}}, _From, Socket) ->
+handle_call({getkey, {Key}}, _From, Sockets) ->
+    {Socket, NSockets} = get_socket(Key, Sockets),
     Reply = send_get_cmd(Socket, iolist_to_binary([<<"get ">>, Key])),
-    {reply, Reply, Socket};
+    {reply, Reply, NSockets};
 
-handle_call({getskey, {Key}}, _From, Socket) ->
+handle_call({getskey, {Key}}, _From, Sockets) ->
+    {Socket, NSockets} = get_socket(Key, Sockets),
     Reply = send_gets_cmd(Socket, iolist_to_binary([<<"gets ">>, Key])),
-    {reply, [Reply], Socket};
+    {reply, [Reply], NSockets};
 
-handle_call({delete, {Key, Time}}, _From, Socket) ->
+handle_call({delete, {Key, Time}}, _From, Sockets) ->
+    {Socket, NSockets} = get_socket(Key, Sockets),
     Reply = send_generic_cmd(
         Socket,
         iolist_to_binary([<<"delete ">>, Key, <<" ">>, Time])
     ),
-    {reply, Reply, Socket};
+    {reply, Reply, NSockets};
 
-handle_call({set, {Key, Flag, ExpTime, Value}}, _From, Socket) ->
+handle_call({set, {Key, Flag, ExpTime, Value}}, _From, Sockets) ->
+    {Socket, NSockets} = get_socket(Key, Sockets),
 	Bin = term_to_binary(Value),
 	Bytes = integer_to_list(size(Bin)),
     Reply = send_storage_cmd(
@@ -301,9 +349,10 @@ handle_call({set, {Key, Flag, ExpTime, Value}}, _From, Socket) ->
         ]),
         Bin
     ),
-    {reply, Reply, Socket};
+    {reply, Reply, NSockets};
 
-handle_call({add, {Key, Flag, ExpTime, Value}}, _From, Socket) ->
+handle_call({add, {Key, Flag, ExpTime, Value}}, _From, Sockets) ->
+    {Socket, NSockets} = get_socket(Key, Sockets),
 	Bin = term_to_binary(Value),
 	Bytes = integer_to_list(size(Bin)),
     Reply = send_storage_cmd(
@@ -313,9 +362,10 @@ handle_call({add, {Key, Flag, ExpTime, Value}}, _From, Socket) ->
         ]),
         Bin
     ),
-    {reply, Reply, Socket};
+    {reply, Reply, NSockets};
 
-handle_call({replace, {Key, Flag, ExpTime, Value}}, _From, Socket) ->
+handle_call({replace, {Key, Flag, ExpTime, Value}}, _From, Sockets) ->
+    {Socket, NSockets} = get_socket(Key, Sockets),
 	Bin = term_to_binary(Value),
 	Bytes = integer_to_list(size(Bin)),
     Reply = send_storage_cmd(
@@ -326,9 +376,10 @@ handle_call({replace, {Key, Flag, ExpTime, Value}}, _From, Socket) ->
         ]),
     	Bin
     ),
-    {reply, Reply, Socket};
+    {reply, Reply, NSockets};
 
-handle_call({cas, {Key, Flag, ExpTime, CasUniq, Value}}, _From, Socket) ->
+handle_call({cas, {Key, Flag, ExpTime, CasUniq, Value}}, _From, Sockets) ->
+    {Socket, NSockets} = get_socket(Key, Sockets),
 	Bin = term_to_binary(Value),
 	Bytes = integer_to_list(size(Bin)),
     Reply = send_storage_cmd(
@@ -339,7 +390,7 @@ handle_call({cas, {Key, Flag, ExpTime, CasUniq, Value}}, _From, Socket) ->
         ]),
         Bin
     ),
-    {reply, Reply, Socket}.
+    {reply, Reply, NSockets}.
 
 %% @private
 handle_cast(_Msg, State) -> {noreply, State}.
@@ -352,9 +403,16 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 %% @private
 %% @doc Closes the socket
-terminate(_Reason, Socket) ->
-    gen_tcp:close(Socket),
+terminate(_Reason, Sockets) ->
+    lists:foreach(
+    fun({_Name, nil})-> ok;
+       ({_Name, Socket})->
+        gen_tcp:close(Socket)
+       
+    end, gb_trees:to_list(Sockets)),
     ok.
+
+
 
 %% @private
 %% @doc send_generic_cmd/2 function for simple informational and deletion commands
