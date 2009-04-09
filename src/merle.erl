@@ -78,7 +78,7 @@ verbosity(Args) when is_integer(Args) ->
 verbosity(Args)->
 	case gen_server2:call(?SERVER, {verbosity, {Args}}) of
 		["OK"] -> ok;
-		timeout -> undefined;
+		{error, _} -> undefined;
 		[X] -> X
 	end.
 
@@ -86,7 +86,7 @@ verbosity(Args)->
 flushall() ->
 	case gen_server2:call(?SERVER, {flushall}) of
 		["OK"] -> ok;
-		timeout -> undefined;
+		{error, _}  -> undefined;
 		[X] -> X
 	end.
 
@@ -96,7 +96,7 @@ flushall(Delay) when is_integer(Delay) ->
 flushall(Delay) ->
 	case gen_server2:call(?SERVER, {flushall, {Delay}}) of
 		["OK"] -> ok;
-		timeout -> undefined;
+		{error, _}  -> undefined;
 		[X] -> X
 	end.
 
@@ -106,7 +106,7 @@ getkey(Key) when is_atom(Key) ->
 getkey(Key) ->
 	case gen_server2:call(?SERVER, {getkey,{Key}}) of
 	    ["END"] -> undefined;
-	    timeout -> undefined;
+	    {error, _}  -> undefined;
 	    [X] -> X
 	end.
 
@@ -116,7 +116,7 @@ getskey(Key) when is_atom(Key) ->
 getskey(Key) ->
 	case gen_server2:call(?SERVER, {getskey,{Key}}) of
 	    ["END"] -> undefined;
-	    timeout -> undefined;
+	    {error, _}  -> undefined;
 	    [X] -> X
 	end.
 
@@ -131,7 +131,7 @@ delete(Key, Time) when is_integer(Time) ->
 delete(Key, Time) ->
 	case gen_server2:call(?SERVER, {delete, {Key, Time}}) of
 		["DELETED"] -> ok;
-		timeout -> not_found;
+		{error, _}  -> not_found;
 		["NOT_FOUND"] -> not_found;
 		[X] -> X
 	end.
