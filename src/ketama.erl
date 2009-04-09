@@ -79,7 +79,6 @@ handle_call({getserver, Key}, _From, #state{port=Port, filename=ServersFile,last
     Port2 ! {self(), {command, Key}},
     receive
         {Port2, {data, Data}} ->
-            error_logger:info_msg("Received data : ~p", [Data]),
             {reply, Data, NewState}
         after 1000 -> % if it takes this long, you have serious issues.
             error_logger:info_msg("Timeout on ~p", [Key]),

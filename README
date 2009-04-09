@@ -1,1 +1,53 @@
-ketama client integrated
+For original README, see README.orig
+= About = 
+Building on merle and ketama, this application enables memcached access from erlang.
+
+= Prerequisites =
+
+- ruby and rake for building
+- libketama <http://www.audioscrobbler.net/development/ketama/>
+- memcached servers <http://www.danga.com/memcached/>
+
+= Builing =
+
+Run rake a first time and make sure ERL_TOP is set at the right location.
+sudo rake install will install the application where necessary.
+
+= Example Usage =
+
+Provide a ketama.servers file (such as the one here).
+
+Open 3 terminals and start memcached in each one of them on a different port :
+$ memcached -p 11211 -vv
+$ memcached -p 11212 -vv
+$ memcached -p 11213 -vv
+
+Open another terminal, and run :
+$ erl -s merle -merle file '"ketama.servers"' # use the one included here.
+
+You should see on the memcached servers something like :
+<18 new client connection
+
+For the rest, see the README.orig file
+
+You should see that the keys you set are distributed amongs the servers.
+
+= Editing the ketama file =
+
+The ketama.servers file is tracked and reloaded each time it is modified.
+ketama provided consistent hashing goodness ; adding and removing memcached servers does not invalidate all the cache.
+
+One caveat : currently the app doesn't flush newly added memcached servers, that may cause inconsistencies.
+On top of that, I have not implemented the flush command for a specific server.
+
+= Authors =
+
+Eric Cestari, maintaining this stuff.
+
+With original merle client 
+ * Copyright 2009, Joe Williams <joe@joetify.com>
+ * Copyright 2009, Nick Gerakines <nick@gerakines.net>
+
+And original ketama driver by Richard Jones  last.fm
+(thanks guys !)
+
