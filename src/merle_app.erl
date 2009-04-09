@@ -7,14 +7,18 @@
 	 ]).
 
 start(_Type, _StartArgs)->
-    KetamaServers = get(file, "KETAMA_FILE"),
-    merle_sup:start_link(KetamaServers).
+    case get(file, "KETAMA_FILE") of
+        error ->
+            {error, "please set the file application variable or the KETAMA_FILE environment variable"};
+        KetamaServers ->
+            merle_sup:start_link(KetamaServers)
+    end.
     
 stop(_State)->
     ok.
        
 get(Atom, Env)->
-    case application:get_env(Atom) of
+    case application:get_env(merle, Atom) of
      {ok, Value} ->
          Value;
      undefined ->
