@@ -14,11 +14,11 @@ else
   exit(-1)
 end
  
-task :build => ["priv/ketama_erlang_driver"] do
+task :build => ["priv/ketama_erlang_driver", "ebin"] do
   sh "#{ERL_TOP}/bin/erl -make"
   sh "cp src/#{NAME}.app ebin/#{NAME}.app"
 end
-
+directory "ebin"
 directory "priv"
 task "priv/ketama_erlang_driver" => ["src/ketama_erlang_driver.c", "priv"] do |t|
   cflags = if uname == "Darwin\n"
